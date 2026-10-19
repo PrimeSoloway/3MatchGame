@@ -1,5 +1,6 @@
-using UnityEngine;
 using TMPro; // Обязательно для работы с текстом UI
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class GridManager : MonoBehaviour
 {
@@ -20,14 +21,21 @@ public class GridManager : MonoBehaviour
     public GameObject gameOverText; // Сюда перетащим наш текст Game Over
     private bool isGameOver = false; // Флаг, чтобы игра остановилась
 
+    private int currentLevel = 1;
     private int score = 0;
     private int moves = 20; // Даем 20 ходов
+    public int targetScore = 1000; // Цель по очкам
+    public GameObject victoryText; // Ссылка на текст победы
 
     private GameObject[,] allPieces;
     private Piece firstSelectedPiece;
 
     void Start()
     {
+        // Настраиваем сложность в зависимости от уровня
+        targetScore = 1000 * currentLevel; // На 1 уровне цель 1000 очков
+        moves = 25 - (currentLevel * 2);   // На 1 уровне будет 23 хода
+
         allPieces = new GameObject[width, height];
         CreateGrid();
         UpdateUI();
@@ -321,10 +329,17 @@ public class GridManager : MonoBehaviour
 
     void UpdateUI()
     {
-        if (scoreText != null) scoreText.text = "Score: " + score;
+        if (scoreText != null) scoreText.text = "Score: " + score + " / " + targetScore;
         if (movesText != null) movesText.text = "Moves: " + moves;
 
-        // Проверяем, не закончились ли ходы
+        // 1. Проверяем победу
+        if (score >= targetScore && !isGameOver)
+        {
+            Victory();
+            return; // Выходим, чтобы не сработал Game Over
+        }
+
+        // 2. Проверяем поражение (если ходы кончились)
         if (moves <= 0 && !isGameOver)
         {
             GameOver();
@@ -340,5 +355,19 @@ public class GridManager : MonoBehaviour
         {
             gameOverText.SetActive(true); // Показываем текст
         }
+    }
+    void Victory()
+    {
+        isGameOver = true;
+        Debug.Log("Победа! Твой счет: " + score);
+
+        if (victoryText != null)
+        {
+            victoryText.SetActive(true); // Показываем текст победы
+        }
+    }
+    public void RestartGame()
+    {
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 }
