@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro; // Обязательно для работы с текстом UI
 
 public class GridManager : MonoBehaviour
 {
@@ -11,7 +12,16 @@ public class GridManager : MonoBehaviour
     public Color[] pieceColors = new Color[] { Color.red, Color.green, Color.blue, Color.yellow };
 
     [Header("Эффекты")]
-    public GameObject explosionPrefab; // Сюда перетащим префаб взрыва
+    public GameObject explosionPrefab;
+
+    [Header("UI")]
+    public TextMeshProUGUI scoreText;
+    public TextMeshProUGUI movesText;
+    public GameObject gameOverText; // Сюда перетащим наш текст Game Over
+    private bool isGameOver = false; // Флаг, чтобы игра остановилась
+
+    private int score = 0;
+    private int moves = 20; // Даем 20 ходов
 
     private GameObject[,] allPieces;
     private Piece firstSelectedPiece;
@@ -20,6 +30,7 @@ public class GridManager : MonoBehaviour
     {
         allPieces = new GameObject[width, height];
         CreateGrid();
+        UpdateUI();
     }
 
     void CreateGrid()
@@ -31,32 +42,25 @@ public class GridManager : MonoBehaviour
                 GameObject newPiece = Instantiate(piecePrefab);
                 newPiece.name = $"Piece_{x}_{y}";
 
-                // Выбираем случайный цвет, но проверяем, не создаст ли он тройку
                 int randomIndex = Random.Range(0, pieceColors.Length);
                 Color randomColor = pieceColors[randomIndex];
 
-                // Проверяем: если две фишки слева или снизу того же цвета — меняем цвет
                 bool colorIsBad = false;
 
-                // Проверка по горизонтали (две слева)
                 if (x >= 2)
                 {
                     Color colorLeft1 = allPieces[x - 1, y].GetComponent<SpriteRenderer>().color;
                     Color colorLeft2 = allPieces[x - 2, y].GetComponent<SpriteRenderer>().color;
-                    if (colorLeft1 == randomColor && colorLeft2 == randomColor)
-                        colorIsBad = true;
+                    if (colorLeft1 == randomColor && colorLeft2 == randomColor) colorIsBad = true;
                 }
 
-                // Проверка по вертикали (две снизу)
                 if (y >= 2)
                 {
                     Color colorDown1 = allPieces[x, y - 1].GetComponent<SpriteRenderer>().color;
                     Color colorDown2 = allPieces[x, y - 2].GetComponent<SpriteRenderer>().color;
-                    if (colorDown1 == randomColor && colorDown2 == randomColor)
-                        colorIsBad = true;
+                    if (colorDown1 == randomColor && colorDown2 == randomColor) colorIsBad = true;
                 }
 
-                // Если цвет создаёт тройку — перебираем заново
                 while (colorIsBad)
                 {
                     randomIndex = Random.Range(0, pieceColors.Length);
@@ -67,15 +71,13 @@ public class GridManager : MonoBehaviour
                     {
                         Color colorLeft1 = allPieces[x - 1, y].GetComponent<SpriteRenderer>().color;
                         Color colorLeft2 = allPieces[x - 2, y].GetComponent<SpriteRenderer>().color;
-                        if (colorLeft1 == randomColor && colorLeft2 == randomColor)
-                            colorIsBad = true;
+                        if (colorLeft1 == randomColor && colorLeft2 == randomColor) colorIsBad = true;
                     }
                     if (y >= 2)
                     {
                         Color colorDown1 = allPieces[x, y - 1].GetComponent<SpriteRenderer>().color;
                         Color colorDown2 = allPieces[x, y - 2].GetComponent<SpriteRenderer>().color;
-                        if (colorDown1 == randomColor && colorDown2 == randomColor)
-                            colorIsBad = true;
+                        if (colorDown1 == randomColor && colorDown2 == randomColor) colorIsBad = true;
                     }
                 }
 
@@ -95,6 +97,8 @@ public class GridManager : MonoBehaviour
 
     void Update()
     {
+        if (isGameOver) return; // Если игра окончена — не реагируем на клики
+
         if (Input.GetMouseButtonDown(0))
         {
             Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
@@ -105,25 +109,21 @@ public class GridManager : MonoBehaviour
                 Piece piece = hit.GetComponent<Piece>();
                 if (piece != null)
                 {
-                    Debug.Log("Клик по фишке: " + piece.name);
                     OnPieceClicked(piece);
                 }
             }
         }
     }
 
-    // Этот метод вызывается, когда игрок кликает по фишке
     public void OnPieceClicked(Piece piece)
     {
-        // Если ничего не выбрано — запоминаем первую фишку и подсвечиваем её
         if (firstSelectedPiece == null)
         {
             firstSelectedPiece = piece;
-            piece.GetComponent<SpriteRenderer>().color = Color.white; // Подсветка
+            piece.GetComponent<SpriteRenderer>().color = Color.white;
         }
         else
         {
-            // Если кликнули по той же самой фишке — сбрасываем выбор
             if (firstSelectedPiece == piece)
             {
                 firstSelectedPiece.GetComponent<SpriteRenderer>().color = firstSelectedPiece.originalColor;
@@ -131,27 +131,23 @@ public class GridManager : MonoBehaviour
                 return;
             }
 
-            // Проверяем, являются ли фишки соседними (разница по X + разница по Y = 1)
             if (Mathf.Abs(firstSelectedPiece.x - piece.x) + Mathf.Abs(firstSelectedPiece.y - piece.y) == 1)
             {
-                // Меняем местами
                 SwapPieces(firstSelectedPiece, piece);
             }
 
-            // В любом случае сбрасываем выбор и возвращаем цвет
             firstSelectedPiece.GetComponent<SpriteRenderer>().color = firstSelectedPiece.originalColor;
             firstSelectedPiece = null;
         }
     }
 
-    // Логика обмена двух фишек
-    void SwapPieces(Piece piece1, Piece piece2)
+    void SwapPieces(Piece piece1, Piece piece2, bool isReverting = false)
     {
-        // 1. Меняем местами в массиве
+        // Меняем местами в массиве
         allPieces[piece1.x, piece1.y] = piece2.gameObject;
         allPieces[piece2.x, piece2.y] = piece1.gameObject;
 
-        // 2. Меняем их координаты в скриптах
+        // Меняем координаты
         int tempX = piece1.x;
         int tempY = piece1.y;
         piece1.x = piece2.x;
@@ -159,17 +155,38 @@ public class GridManager : MonoBehaviour
         piece2.x = tempX;
         piece2.y = tempY;
 
-        // 3. Меняем их позиции в мире (визуально)
+        // Меняем позиции
         Vector3 tempPos = piece1.transform.position;
         piece1.transform.position = piece2.transform.position;
         piece2.transform.position = tempPos;
 
-        // 4. НОВОЕ: Проверяем, есть ли совпадения после обмена
-        FindMatches();
+        // Если это не откат — проверяем совпадения и тратим ход
+        if (!isReverting)
+        {
+            int matches = FindMatches();
+
+            if (matches == 0)
+            {
+                Debug.Log("Нет совпадений! Возвращаем фишки.");
+                StartCoroutine(RevertSwap(piece1, piece2));
+            }
+            else
+            {
+                // Тратим ход только если совпадение удалось!
+                moves--;
+                UpdateUI();
+            }
+        }
     }
 
-    
-    void FindMatches()
+    System.Collections.IEnumerator RevertSwap(Piece p1, Piece p2)
+    {
+        yield return new WaitForSeconds(0.2f);
+        SwapPieces(p1, p2, true);
+    }
+
+    // ВАЖНО: Метод возвращает int (количество удаленных фишек)
+    int FindMatches()
     {
         System.Collections.Generic.List<GameObject> piecesToRemove = new System.Collections.Generic.List<GameObject>();
 
@@ -179,7 +196,7 @@ public class GridManager : MonoBehaviour
             {
                 if (allPieces[x, y] == null) continue;
 
-                // Проверка горизонтали
+                // Горизонталь
                 if (x < width - 2 && allPieces[x + 1, y] != null && allPieces[x + 2, y] != null)
                 {
                     Piece p1 = allPieces[x, y].GetComponent<Piece>();
@@ -194,7 +211,7 @@ public class GridManager : MonoBehaviour
                     }
                 }
 
-                // Проверка вертикали
+                // Вертикаль
                 if (y < height - 2 && allPieces[x, y + 1] != null && allPieces[x, y + 2] != null)
                 {
                     Piece p1 = allPieces[x, y].GetComponent<Piece>();
@@ -211,27 +228,29 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // Удаляем фишки + создаём взрывы
-        foreach (GameObject piece in piecesToRemove)
-        {
-            Piece p = piece.GetComponent<Piece>();
-            allPieces[p.x, p.y] = null;
-
-            if (explosionPrefab != null)
-            {
-                GameObject explosion = Instantiate(explosionPrefab, piece.transform.position, Quaternion.identity);
-                Destroy(explosion, 1.5f);
-            }
-
-            Destroy(piece);
-        }
-
-        // ЗАПУСКАЕМ ЗАПОЛНЕНИЕ
+        // Если что-то нашли
         if (piecesToRemove.Count > 0)
         {
-            Debug.Log($"Удалено фишек: {piecesToRemove.Count}");
+            foreach (GameObject piece in piecesToRemove)
+            {
+                Piece p = piece.GetComponent<Piece>();
+                allPieces[p.x, p.y] = null;
+
+                if (explosionPrefab != null)
+                {
+                    GameObject explosion = Instantiate(explosionPrefab, piece.transform.position, Quaternion.identity);
+                    Destroy(explosion, 1.5f);
+                }
+
+                Destroy(piece);
+            }
+
+            score += piecesToRemove.Count * 10;
+            UpdateUI();
             RefillBoard();
         }
+
+        return piecesToRemove.Count;
     }
 
     void RefillBoard()
@@ -252,7 +271,6 @@ public class GridManager : MonoBehaviour
                     allPieces[x, y - holes] = allPieces[x, y];
                     allPieces[x, y] = null;
                     p.y = y - holes;
-                    // Вместо мгновенного перемещения — плавное
                     StartCoroutine(MovePiece(p, new Vector3(x - (width - 1) / 2.0f, p.y - (height - 1) / 2.0f, 0)));
                 }
             }
@@ -273,7 +291,6 @@ public class GridManager : MonoBehaviour
                 pieceScript.gridManager = this;
                 pieceScript.originalColor = randomColor;
 
-                // Ставим новую фишку ВЫШЕ поля, чтобы она «упала»
                 Vector3 startPos = new Vector3(x - (width - 1) / 2.0f, height - (height - 1) / 2.0f + 1, 0);
                 Vector3 endPos = new Vector3(x - (width - 1) / 2.0f, y - (height - 1) / 2.0f, 0);
                 newPiece.transform.position = startPos;
@@ -283,13 +300,12 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        Invoke("FindMatches", 0.35f); // Чуть дольше, чтобы анимация успела
+        Invoke("FindMatches", 0.5f); // Ждем падения и проверяем каскады
     }
 
-    // НОВОЕ: Плавное движение фишки
     System.Collections.IEnumerator MovePiece(Piece piece, Vector3 targetPos)
     {
-        float duration = 0.2f; // Время падения в секундах
+        float duration = 0.2f;
         float elapsed = 0f;
         Vector3 startPos = piece.transform.position;
 
@@ -301,5 +317,28 @@ public class GridManager : MonoBehaviour
             yield return null;
         }
         piece.transform.position = targetPos;
+    }
+
+    void UpdateUI()
+    {
+        if (scoreText != null) scoreText.text = "Score: " + score;
+        if (movesText != null) movesText.text = "Moves: " + moves;
+
+        // Проверяем, не закончились ли ходы
+        if (moves <= 0 && !isGameOver)
+        {
+            GameOver();
+        }
+    }
+
+    void GameOver()
+    {
+        isGameOver = true;
+        Debug.Log("Игра окончена! Твой счет: " + score);
+
+        if (gameOverText != null)
+        {
+            gameOverText.SetActive(true); // Показываем текст
+        }
     }
 }
