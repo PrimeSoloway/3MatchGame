@@ -14,7 +14,10 @@ public class GridManager : MonoBehaviour
 
     [Header("Эффекты")]
     public GameObject explosionPrefab;
-
+    
+    [Header("Героиня (Анимации)")]
+    public HeroineAnimator heroineAnimator;
+    
     [Header("UI")]
     public TextMeshProUGUI scoreText;
     public TextMeshProUGUI movesText;
@@ -355,6 +358,7 @@ public class GridManager : MonoBehaviour
         {
             gameOverText.SetActive(true); // Показываем текст
         }
+        if (heroineAnimator != null) heroineAnimator.PlayDefeat();
     }
     void Victory()
     {
@@ -365,6 +369,7 @@ public class GridManager : MonoBehaviour
         {
             victoryText.SetActive(true); // Показываем текст победы
         }
+        if (heroineAnimator != null) heroineAnimator.PlayVictory();
     }
     public void RestartGame()
     {
