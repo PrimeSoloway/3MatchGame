@@ -1,6 +1,7 @@
-using TMPro; // Обязательно для работы с текстом UI
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI; // ОБЯЗАТЕЛЬНО добавили для работы со Slider (полосками здоровья)
 
 public class GridManager : MonoBehaviour
 {
@@ -14,34 +15,71 @@ public class GridManager : MonoBehaviour
 
     [Header("Эффекты")]
     public GameObject explosionPrefab;
-    
+
+    [Header("Анимация огня")]
+    public float pulseSpeed = 5f;      // Скорость пульсации
+    public float pulseAmount = 0.1f;   // Насколько сильно огонь меняет размер
+    private Vector3 originalFireScale; // Запоминаем изначальный размер огня
+
     [Header("Героиня (Анимации)")]
     public HeroineAnimator heroineAnimator;
-    
-    [Header("UI")]
-    public TextMeshProUGUI scoreText;
-    public TextMeshProUGUI movesText;
-    public GameObject gameOverText; // Сюда перетащим наш текст Game Over
-    private bool isGameOver = false; // Флаг, чтобы игра остановилась
 
-    private int currentLevel = 1;
-    private int score = 0;
-    private int moves = 20; // Даем 20 ходов
-    public int targetScore = 1000; // Цель по очкам
-    public GameObject victoryText; // Ссылка на текст победы
+    [Header("Враги")]
+    [Header("Визуал врагов")]
+    public Image enemyImage; // Картинка врага (Enemy_UI)
+    public Sprite[] enemySprites; // Массив твоих 11 картинок
+
+    [Header("Прогресс и Экономика")]
+    public int currentLevel = 1;
+    public float baseEnemyHealth = 100f;
+    public int crystals = 0;
+    public int playerDamage = 10;
+    public TextMeshProUGUI crystalsText;
+
+    [Header("Здоровье")]
+    public float maxPlayerHealth = 100f;
+    public float currentPlayerHealth = 100f;
+    public float maxEnemyHealth = 100f;
+    public float currentEnemyHealth = 100f;
+
+    [Header("Мана")]
+    public int maxMana = 25;
+    public Image manaFlaskLiquid;
+
+    [Header("UI")]
+    public Image healthFlaskLiquid; // Фласка здоровья игрока
+    public Slider enemyHealthBar;  // Полоска здоровья врага
+    public TextMeshProUGUI movesText;
+    public GameObject gameOverText;
+    public GameObject victoryText;
+    public GameObject fireAura;    // Ссылка на наш огонь
+    public Image caveOverlay;      // Ссылка на затемнение (если еще не добавил)
+    public TextMeshProUGUI playerHealthText;
+    public TextMeshProUGUI enemyHealthText;
+    public TextMeshProUGUI enemyLevelText;
+
+    private bool isGameOver = false;
+    private int moves = 20;
 
     private GameObject[,] allPieces;
     private Piece firstSelectedPiece;
 
     void Start()
     {
-        // Настраиваем сложность в зависимости от уровня
-        targetScore = 1000 * currentLevel; // На 1 уровне цель 1000 очков
-        moves = 25 - (currentLevel * 2);   // На 1 уровне будет 23 хода
+        // Настраиваем сложность
+        moves = 25 - (currentLevel * 2);
+
+        // Настраиваем здоровье
+        maxEnemyHealth = baseEnemyHealth * currentLevel;
+        currentEnemyHealth = maxEnemyHealth;
 
         allPieces = new GameObject[width, height];
         CreateGrid();
         UpdateUI();
+        if (fireAura != null)
+        {
+            originalFireScale = fireAura.transform.localScale;
+        }
     }
 
     void CreateGrid()
@@ -108,7 +146,12 @@ public class GridManager : MonoBehaviour
 
     void Update()
     {
-        if (isGameOver) return; // Если игра окончена — не реагируем на клики
+        if (fireAura != null && fireAura.activeSelf)
+        {
+            float pulse = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseAmount;
+            fireAura.transform.localScale = originalFireScale * pulse;
+        }
+        if (isGameOver) return;
 
         if (Input.GetMouseButtonDown(0))
         {
@@ -154,11 +197,9 @@ public class GridManager : MonoBehaviour
 
     void SwapPieces(Piece piece1, Piece piece2, bool isReverting = false)
     {
-        // Меняем местами в массиве
         allPieces[piece1.x, piece1.y] = piece2.gameObject;
         allPieces[piece2.x, piece2.y] = piece1.gameObject;
 
-        // Меняем координаты
         int tempX = piece1.x;
         int tempY = piece1.y;
         piece1.x = piece2.x;
@@ -166,12 +207,10 @@ public class GridManager : MonoBehaviour
         piece2.x = tempX;
         piece2.y = tempY;
 
-        // Меняем позиции
         Vector3 tempPos = piece1.transform.position;
         piece1.transform.position = piece2.transform.position;
         piece2.transform.position = tempPos;
 
-        // Если это не откат — проверяем совпадения и тратим ход
         if (!isReverting)
         {
             int matches = FindMatches();
@@ -183,8 +222,12 @@ public class GridManager : MonoBehaviour
             }
             else
             {
-                // Тратим ход только если совпадение удалось!
                 moves--;
+                UpdateUI();
+
+                // Враг бьет в ответ за каждый потраченный ход
+                currentPlayerHealth -= 5f;
+                if (currentPlayerHealth < 0) currentPlayerHealth = 0;
                 UpdateUI();
             }
         }
@@ -196,7 +239,6 @@ public class GridManager : MonoBehaviour
         SwapPieces(p1, p2, true);
     }
 
-    // ВАЖНО: Метод возвращает int (количество удаленных фишек)
     int FindMatches()
     {
         System.Collections.Generic.List<GameObject> piecesToRemove = new System.Collections.Generic.List<GameObject>();
@@ -239,24 +281,62 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // Если что-то нашли
         if (piecesToRemove.Count > 0)
         {
-            foreach (GameObject piece in piecesToRemove)
+            int greenCount = 0;
+            int otherCount = 0;
+            int blueCount = 0; // Новая переменная для синих фишек
+
+            // Считаем фишки по цветам
+            foreach (GameObject pieceObj in piecesToRemove)
             {
-                Piece p = piece.GetComponent<Piece>();
+                Piece p = pieceObj.GetComponent<Piece>();
+
+                if (p.originalColor == Color.green) greenCount++;
+                else if (p.originalColor == Color.blue) blueCount++; // Если синяя — плюс мана
+                else otherCount++; // Остальные бьют врага
+                               
                 allPieces[p.x, p.y] = null;
 
                 if (explosionPrefab != null)
                 {
-                    GameObject explosion = Instantiate(explosionPrefab, piece.transform.position, Quaternion.identity);
+                    GameObject explosion = Instantiate(explosionPrefab, pieceObj.transform.position, Quaternion.identity);
                     Destroy(explosion, 1.5f);
                 }
 
-                Destroy(piece);
+                Destroy(pieceObj);
             }
 
-            score += piecesToRemove.Count * 10;
+            // ЛЕЧЕНИЕ (зеленые фишки)
+            if (greenCount > 0)
+            {
+                currentPlayerHealth += greenCount * 5f;
+                if (currentPlayerHealth > maxPlayerHealth) currentPlayerHealth = maxPlayerHealth;
+            }
+
+            // ВОССТАНОВЛЕНИЕ МАНЫ (синие фишки)
+            if (blueCount > 0)
+            {
+                moves += blueCount; // Добавляем ману (1 фишка = 1 мана)
+
+                // Не даем мане превысить максимум
+                if (moves > maxMana) moves = maxMana;
+
+                Debug.Log("Собрано синих фишек: " + blueCount + ". Мана восстановлена!");
+            }
+
+            // УРОН (остальные фишки)
+            if (otherCount > 0)
+            {
+                currentEnemyHealth -= otherCount * playerDamage;
+                StartCoroutine(FlashEnemyDamage());
+                if (currentEnemyHealth <= 0)
+                {
+                    currentEnemyHealth = 0;
+                    EnemyDefeated();
+                }
+            }
+
             UpdateUI();
             RefillBoard();
         }
@@ -311,7 +391,7 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        Invoke("FindMatches", 0.5f); // Ждем падения и проверяем каскады
+        Invoke("FindMatches", 0.5f);
     }
 
     System.Collections.IEnumerator MovePiece(Piece piece, Vector3 targetPos)
@@ -332,47 +412,119 @@ public class GridManager : MonoBehaviour
 
     void UpdateUI()
     {
-        if (scoreText != null) scoreText.text = "Score: " + score + " / " + targetScore;
-        if (movesText != null) movesText.text = "Moves: " + moves;
+        if (movesText != null) movesText.text = "Ходы: " + moves + " / " + maxMana; // Пишем макс. ману
 
-        // 1. Проверяем победу
-        if (score >= targetScore && !isGameOver)
-        {
-            Victory();
-            return; // Выходим, чтобы не сработал Game Over
-        }
+        // Обновляем полоски
+        if (healthFlaskLiquid != null)
+            healthFlaskLiquid.fillAmount = currentPlayerHealth / maxPlayerHealth;
+        if (manaFlaskLiquid != null)
+            manaFlaskLiquid.fillAmount = (float)moves / maxMana;
+        if (enemyHealthBar != null) enemyHealthBar.value = currentEnemyHealth;
 
-        // 2. Проверяем поражение (если ходы кончились)
-        if (moves <= 0 && !isGameOver)
+        // Обновляем цифры
+        if (playerHealthText != null)
+            playerHealthText.text = Mathf.RoundToInt(currentPlayerHealth) + " / " + Mathf.RoundToInt(maxPlayerHealth);
+
+        if (enemyHealthText != null)
+            enemyHealthText.text = Mathf.RoundToInt(currentEnemyHealth) + " / " + Mathf.RoundToInt(maxEnemyHealth);
+
+        if (enemyLevelText != null)
+            enemyLevelText.text = "Уровень " + currentLevel;
+
+        // Проверяем поражение
+        if ((moves <= 0 || currentPlayerHealth <= 0) && !isGameOver)
         {
             GameOver();
+        }
+    }
+
+    void EnemyDefeated()
+    {
+        Debug.Log("Враг повержен!");
+
+        // Даем кристаллы
+        int reward = 10 + (currentLevel * 5);
+        crystals += reward;
+        if (crystalsText != null) crystalsText.text = "Кристаллы: " + crystals;
+
+        // Повышаем уровень
+        currentLevel++;
+
+        // Смена картинки врага
+        if (enemyImage != null && enemySprites.Length > 0)
+        {
+            // Берем картинку по кругу (если уровень больше, чем картинок, начинаем сначала)
+            int spriteIndex = (currentLevel - 1) % enemySprites.Length;
+            enemyImage.sprite = enemySprites[spriteIndex];
+        }
+
+        // Делаем следующего врага сильнее
+        maxEnemyHealth = baseEnemyHealth * currentLevel;
+        currentEnemyHealth = maxEnemyHealth;
+
+        Debug.Log($"Уровень {currentLevel}! Новый враг с HP: {maxEnemyHealth}");
+        UpdateUI();
+    }
+
+    // Метод для кнопки улучшения
+    public void BuyDamageUpgrade()
+    {
+        if (crystals >= 50)
+        {
+            crystals -= 50;
+            playerDamage += 5;
+            if (crystalsText != null) crystalsText.text = "Кристаллы: " + crystals;
+
+            // ВКЛЮЧАЕМ И УВЕЛИЧИВАЕМ ОГОНЬ
+            if (fireAura != null)
+            {
+                fireAura.SetActive(true);
+
+                // Берем текущий размер и умножаем на 1.15 (плюс 15%)
+                float newScaleX = fireAura.transform.localScale.x * 1.15f;
+                float newScaleY = fireAura.transform.localScale.y * 1.15f;
+
+                // Ограничиваем максимальный размер (например, не больше 2.0, чтобы не закрыть доску)
+                if (newScaleX > 2.0f) newScaleX = 2.0f;
+                if (newScaleY > 2.0f) newScaleY = 2.0f;
+
+                fireAura.transform.localScale = new Vector3(newScaleX, newScaleY, 1);
+            }
+
+            Debug.Log("Урон улучшен! Теперь урон: " + playerDamage);
+        }
+        else
+        {
+            Debug.Log("Не хватает кристаллов!");
         }
     }
 
     void GameOver()
     {
         isGameOver = true;
-        Debug.Log("Игра окончена! Твой счет: " + score);
-
-        if (gameOverText != null)
-        {
-            gameOverText.SetActive(true); // Показываем текст
-        }
+        Debug.Log("Игра окончена!");
+        if (gameOverText != null) gameOverText.SetActive(true);
         if (heroineAnimator != null) heroineAnimator.PlayDefeat();
     }
+
     void Victory()
     {
         isGameOver = true;
-        Debug.Log("Победа! Твой счет: " + score);
-
-        if (victoryText != null)
-        {
-            victoryText.SetActive(true); // Показываем текст победы
-        }
+        if (victoryText != null) victoryText.SetActive(true);
         if (heroineAnimator != null) heroineAnimator.PlayVictory();
     }
+
     public void RestartGame()
     {
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
+    System.Collections.IEnumerator FlashEnemyDamage()
+    {
+        if (enemyImage == null) yield break;
+
+        Color originalColor = enemyImage.color;
+        enemyImage.color = new Color(1f, 0.3f, 0.3f); // Красный оттенок
+        yield return new WaitForSeconds(0.15f);
+        enemyImage.color = originalColor; // Возвращаем белый
     }
 }
