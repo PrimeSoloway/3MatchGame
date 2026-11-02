@@ -29,6 +29,13 @@ public class GridManager : MonoBehaviour
     public Image enemyImage; // Картинка врага (Enemy_UI)
     public Sprite[] enemySprites; // Массив твоих 11 картинок
 
+    [Header("Боссы")]
+    public Sprite[] bossSprites; // Сюда закинешь картинки боссов
+    public float bossHealthMultiplier = 3f; // У босса будет в 3 раза больше HP
+    public float bossScaleMultiplier = 1.3f; // Босс будет на 30% больше обычного моба
+
+    private Vector3 originalEnemyScale; // Запоминаем изначальный размер картинки
+
     [Header("Прогресс и Экономика")]
     public int currentLevel = 1;
     public float baseEnemyHealth = 100f;
@@ -45,6 +52,13 @@ public class GridManager : MonoBehaviour
     [Header("Мана")]
     public int maxMana = 25;
     public Image manaFlaskLiquid;
+
+    [Header("Звуки (SFX)")]
+    public AudioSource audioSource;
+    public AudioClip clickSound;
+    public AudioClip matchSound;
+    public AudioClip bossSound;
+    public AudioClip upgradeSound;
 
     [Header("UI")]
     public Image healthFlaskLiquid; // Фласка здоровья игрока
@@ -79,6 +93,10 @@ public class GridManager : MonoBehaviour
         if (fireAura != null)
         {
             originalFireScale = fireAura.transform.localScale;
+        }
+        if (enemyImage != null)
+        {
+            originalEnemyScale = enemyImage.transform.localScale;
         }
     }
 
@@ -175,6 +193,7 @@ public class GridManager : MonoBehaviour
         {
             firstSelectedPiece = piece;
             piece.GetComponent<SpriteRenderer>().color = Color.white;
+            PlaySFX(clickSound);
         }
         else
         {
@@ -283,6 +302,7 @@ public class GridManager : MonoBehaviour
 
         if (piecesToRemove.Count > 0)
         {
+            PlaySFX(matchSound);
             int greenCount = 0;
             int otherCount = 0;
             int blueCount = 0; // Новая переменная для синих фишек
@@ -442,27 +462,71 @@ public class GridManager : MonoBehaviour
     {
         Debug.Log("Враг повержен!");
 
-        // Даем кристаллы
+        // 1. Даем кристаллы (за боссов дадим больше!)
         int reward = 10 + (currentLevel * 5);
+
+        // 2. ДАЕМ ФАКЕЛЫ (ДОП ХОДЫ)
+        moves += 3;
+
+        // 3. Повышаем уровень
+        currentLevel++;
+
+        // Проверяем, является ли НОВЫЙ уровень боссом (10, 20, 30...)
+        bool isBossLevel = (currentLevel % 10 == 0);
+
+        if (isBossLevel)
+        {
+            reward *= 3; // За убийство босса даем в 3 раза больше кристаллов
+
+            if (enemyImage != null && bossSprites.Length > 0)
+            {
+                // Выбираем босса по кругу (10 уровень - 0 индекс, 20 уровень - 1 индекс и т.д.)
+                int bossIndex = (currentLevel / 10 - 1) % bossSprites.Length;
+                enemyImage.sprite = bossSprites[bossIndex];
+
+                // Увеличиваем босса визуально
+                enemyImage.transform.localScale = originalEnemyScale * bossScaleMultiplier;
+            }
+
+            // Даем боссу много HP
+            maxEnemyHealth = baseEnemyHealth * currentLevel * bossHealthMultiplier;
+
+            if (enemyLevelText != null) enemyLevelText.text = "БОСС! Уровень " + currentLevel;
+            Debug.Log("ВНИМАНИЕ! ПОЯВИЛСЯ БОСС!");
+            PlaySFX(bossSound);
+        }
+        else
+        {
+            // Обычный моб
+            if (enemyImage != null && enemySprites.Length > 0)
+            {
+                int spriteIndex = (currentLevel - 1) % enemySprites.Length;
+                enemyImage.sprite = enemySprites[spriteIndex];
+
+                // Возвращаем обычный размер
+                enemyImage.transform.localScale = originalEnemyScale;
+            }
+
+            maxEnemyHealth = baseEnemyHealth * currentLevel;
+
+            if (enemyLevelText != null) enemyLevelText.text = "Уровень " + currentLevel;
+        }
+
+        // Начисляем кристаллы
         crystals += reward;
         if (crystalsText != null) crystalsText.text = "Кристаллы: " + crystals;
 
-        // Повышаем уровень
-        currentLevel++;
-
-        // Смена картинки врага
-        if (enemyImage != null && enemySprites.Length > 0)
+        // 4. ЗАТЕМНЯЕМ ПЕЩЕРУ
+        if (caveOverlay != null)
         {
-            // Берем картинку по кругу (если уровень больше, чем картинок, начинаем сначала)
-            int spriteIndex = (currentLevel - 1) % enemySprites.Length;
-            enemyImage.sprite = enemySprites[spriteIndex];
+            Color c = caveOverlay.color;
+            c.a = Mathf.Min(0.7f, (currentLevel - 1) * 0.05f);
+            caveOverlay.color = c;
         }
 
-        // Делаем следующего врага сильнее
-        maxEnemyHealth = baseEnemyHealth * currentLevel;
+        // 5. Устанавливаем текущее здоровье
         currentEnemyHealth = maxEnemyHealth;
 
-        Debug.Log($"Уровень {currentLevel}! Новый враг с HP: {maxEnemyHealth}");
         UpdateUI();
     }
 
@@ -474,6 +538,8 @@ public class GridManager : MonoBehaviour
             crystals -= 50;
             playerDamage += 5;
             if (crystalsText != null) crystalsText.text = "Кристаллы: " + crystals;
+
+            PlaySFX(upgradeSound);
 
             // ВКЛЮЧАЕМ И УВЕЛИЧИВАЕМ ОГОНЬ
             if (fireAura != null)
@@ -526,5 +592,13 @@ public class GridManager : MonoBehaviour
         enemyImage.color = new Color(1f, 0.3f, 0.3f); // Красный оттенок
         yield return new WaitForSeconds(0.15f);
         enemyImage.color = originalColor; // Возвращаем белый
+    
+    }
+    void PlaySFX(AudioClip clip)
+    {
+        if (audioSource != null && clip != null)
+        {
+            audioSource.PlayOneShot(clip);
+        }
     }
 }
